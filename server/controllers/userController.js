@@ -7,15 +7,21 @@ import userModel from "../models/userModel.js"
 
 const clerkWebhooks = async (req, res) => {
 
+    // Safe logging for debugging
+    console.log('Webhook endpoint hit. Headers:', req.headers);
+    console.log('Webhook endpoint hit. Body:', req.body);
     try {
-        // Create a Svix instance with Clerk webhook secret
-        const whook = new Webhook(process.env.CLERK_WEBHOOK_SECRET);
-        // Svix expects the raw body, not the parsed JSON
-        await whook.verify(JSON.stringify(req.body), {
-            "svix-id": req.headers["svix-id"],
-            "svix-timestamp": req.headers["svix-timestamp"],
-            "svix-signature": req.headers["svix-signature"]
-        });
+        // Enable Svix verification only in production
+        if (process.env.NODE_ENV === 'production') {
+            const whook = new Webhook(process.env.CLERK_WEBHOOK_SECRET);
+            await whook.verify(JSON.stringify(req.body), {
+                "svix-id": req.headers["svix-id"],
+                "svix-timestamp": req.headers["svix-timestamp"],
+                "svix-signature": req.headers["svix-signature"]
+            });
+        } else {
+            console.log('Skipping Svix verification in non-production environment');
+        }
 
         const { data, type } = req.body;
         switch (type) {
@@ -28,8 +34,9 @@ const clerkWebhooks = async (req, res) => {
                     lastName: data.last_name,
                     photo: data.image_url
                 };
+                console.log('Attempting to create user:', userData);
                 await userModel.create(userData);
-                res.json({ success: true });
+                res.json({});
                 break;
             }
             // --------------------For Update-----------------------------
@@ -40,21 +47,23 @@ const clerkWebhooks = async (req, res) => {
                     lastName: data.last_name,
                     photo: data.image_url
                 };
+                console.log('Attempting to update user:', userData);
                 await userModel.findOneAndUpdate({ clerkId: data.id }, userData);
-                res.json({ success: true });
+                res.json({});
                 break;
             }
             case "user.deleted": {
+                console.log('Attempting to delete user with clerkId:', data.id);
                 await userModel.findOneAndDelete({ clerkId: data.id });
-                res.json({ success: true });
+                res.json({});
                 break;
             }
             default:
-                res.json({ success: false, message: "Unknown event type" });
+                console.log('Unknown event type received:', type);
                 break;
         }
     } catch (error) {
-        console.log(error.message);
+        console.log('Webhook handler error:', error.message);
         res.json({ success: false, message: error.message });
     }
 
